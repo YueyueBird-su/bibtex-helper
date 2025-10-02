@@ -128,47 +128,74 @@ export class BibNodeProvider implements vscode.TreeDataProvider<BibItem> {
                     header, "", actual_level, line_start, i, vscode.TreeItemCollapsibleState.Expanded
                 ));
             }
-            else if (line.startsWith("@")) {
-                let matches = line.match(/{.*,/g);
-                if (matches == null) {
-                    i += 1;
-                    if (i == lines.length) break;
-                    continue;
-                }
-                let label = matches[0];
-                label = label.substring(1, label.length - 1);
-                let bib_start_line = i;
-                let n_left_brackets = 0;
-                let n_right_bracket = 0;
-                n_left_brackets = count_char(line, "{");
-                n_right_bracket = count_char(line, "}");
-                while (n_left_brackets > n_right_bracket) {
-                    i += 1;
-                    if (i == lines.length) return bibItems;
-                    line = lines[i];
-                    n_left_brackets += count_char(line, "{");
-                    n_right_bracket += count_char(line, "}");
-                }
-                let bib_end_line = i;
-                let total_bibtext = lines.slice(bib_start_line, bib_end_line).join("");
-                let title_matches = total_bibtext.match(/(?!book)title[\t\s]*=[\t\s]*{*.*}/gs);
-                let title = "";
-                if (title_matches != null) {
-                    title = title_matches[0];
-                    title = extract_parentheses(title);
-                    title_matches = title.match(/{.*}/gs);
-                    if (title_matches != null) {
-                        title = title_matches[0];
-                        title = title.substring(1, title.length - 1);
-                        title = title.replace(/[\s\t\n]+/g, " ").trim();
-                        bibItems.push(new BibItem(
-                            label, title, 99, bib_start_line, bib_end_line + 1, vscode.TreeItemCollapsibleState.None
-                        ));
-                    }
-                }
-                i += 1;
-                if (i == lines.length) return bibItems;
-            }
+			else if (line.startsWith("@")) {
+			    // 抓 key（条目标签）
+			    let matches = line.match(/{[^,]*,/); // 仅到第一个逗号，避免贪婪
+			    if (matches == null) {
+			        i += 1;
+			        if (i == lines.length) break;
+			        continue;
+			    }
+			    let label = matches[0];
+			    label = label.substring(1, label.length - 1); // 去掉包围的 '{' 与最后的逗号
+			
+			    // 统计花括号直到配平（单行/多行通吃）
+			    const countChar = (s: string, ch: string) =>
+			        (s.match(new RegExp(`\\${ch}`, "g")) || []).length;
+			
+			    const braceDelta = (s: string) => countChar(s, "{") - countChar(s, "}");
+			
+			    let bib_start_line = i;
+			    let balance = braceDelta(line);
+			    while (balance > 0) {
+			        i += 1;
+			        if (i == lines.length) return bibItems; // 非配平，提前返回
+			        line = lines[i];
+			        balance += braceDelta(line);
+			    }
+			    let bib_end_line = i;
+			
+			    // 关键修复：包含当前行；并保留换行，正则更稳
+			    let total_bibtext = lines.slice(bib_start_line, bib_end_line + 1).join("\n");
+			
+			    // 解析 title，优先 title，其次回退 booktitle；兼容 {...} / "..." / 裸值
+			    const matchField = (key: string, txt: string): string | null => {
+			        // (^|[,\s]) 确保是独立键；值可为 {…} 或 "…" 或到下一个逗号/右花括号
+			        const re = new RegExp(
+			            `(?:^|[\\s,])${key}\\s*=\\s*(` +
+			                `{[^{}]*}` +              // 花括号
+			                `|"[^"]*"` +              // 双引号
+			                `|[^,}\\n]+` +            // 裸值（直到逗号/右花括号/换行）
+			            `)`,
+			            "i"
+			        );
+			        const m = txt.match(re);
+			        if (!m) return null;
+			        let val = m[1].trim();
+			        if ((val.startsWith("{") && val.endsWith("}")) ||
+			            (val.startsWith("\"") && val.endsWith("\""))) {
+			            val = val.slice(1, -1);
+			        }
+			        // 压一压空白
+			        return val.replace(/[\s\t\n]+/g, " ").trim();
+			    };
+			
+			    let title = matchField("title", total_bibtext) ?? matchField("booktitle", total_bibtext) ?? "";
+			
+			    // 推入 TreeItem
+			    bibItems.push(new BibItem(
+			        label,
+			        title,
+			        99,
+			        bib_start_line,
+			        bib_end_line + 1, // 选区 end 行用下一行开头，方便高亮
+			        vscode.TreeItemCollapsibleState.None
+			    ));
+			
+			    i += 1;
+			    if (i == lines.length) return bibItems;
+			}
+
             // if met a higher-level label, then quit.
             else if (line.startsWith("#") && count_leading_char(line, "#") <= level + 1) break;
             else {
