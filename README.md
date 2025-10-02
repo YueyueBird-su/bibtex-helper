@@ -7,6 +7,7 @@ Source code: https://github.com/zfscgy/bibtex-helper
 The extension displays a Bib Item Tree on the left.
 *   Markdown-style headers (e.g., `### header3`) can be used to classify different bibtex entries.
     ![bibtree](resources/example-bibs/bib_item_tree.PNG)
+    ![bibtree](resources/example-bibs/image.png)
 *   Right-click on the item on the Bib Item Tree will navigate to the position of the entry/header.
 *   `Copy` and `Select` button for bibtex entries and headers.
     *   Click `Copy`, the label of the bibtex entry will be copied.
